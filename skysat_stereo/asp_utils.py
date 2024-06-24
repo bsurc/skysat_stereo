@@ -40,10 +40,10 @@ def run_cmd(bin, args, **kw):
     #binpath = os.path.join('/opt/StereoPipeline/bin/',bin)
     call = [binpath,]
     #print(call)
-    
+
     #print(call)
     #print(' '.join(call))
-    if args is not None: 
+    if args is not None:
         call.extend(args)
     #print(call)
     try:
@@ -80,7 +80,7 @@ def read_tsai_dict(tsai):
     rot = content[10].split(' = ',10)[1].split(' ')
     rot_mat = [np.float(x) for x in rot] # rotation matrix for camera to world coordinates transformation
     pitch = np.float(content[11].split(' = ',10)[1]) # pixel pitch
-    
+
     ecef_proj = 'EPSG:4978'
     geo_proj = 'EPSG:4326'
     ecef2wgs = Transformer.from_crs(ecef_proj,geo_proj)
@@ -359,7 +359,7 @@ def mapproject(img,outfn,session='rpc',dem='WGS84',tr=None,t_srs='EPSG:4326',cam
             map_opt.extend(['--threads',str(iolib.cpu_count())])
     else:
         map_args = [dem,img,outfn]
-    
+
     out = run_cmd('mapproject',map_opt+map_args)
     return out
 
@@ -388,7 +388,7 @@ def dem_mosaic(img_list,outfn,tr=None,tsrs=None,stats=None,tile_size=None):
     """
 
     dem_mosaic_opt = []
-  
+
     if stats:
         dem_mosaic_opt.extend(['--{}'.format(stats)])
     if (tr is not None) & (ast.literal_eval(tr) is not None):
@@ -431,7 +431,7 @@ def get_stereo_opts(session='rpc',ep=0,threads=4,ba_prefix=None,align='Affineepi
     session: str
         camera model with which stereo steps (preprocessing, triangulation will be performed (default: rpc)
     ep: int
-        ASP entry point 
+        ASP entry point
     threads: int
         number of threads to use for each stereo job (default: 4)
     ba_prefix: str
@@ -508,7 +508,10 @@ def get_stereo_opts(session='rpc',ep=0,threads=4,ba_prefix=None,align='Affineepi
     """
     # stereo_tri_args:
     disp_trip = 10000
-    if not mvs:
+    if session == 'pinholemappinhole':
+        stereo_opt.extend(['--num-matches-from-disparity', str(disp_trip)])
+        stereo_opt.extend(['--unalign-disparity'])
+    elif not mvs:
         stereo_opt.extend(['--num-matches-from-disp-triplets', str(disp_trip)])
         stereo_opt.extend(['--unalign-disparity'])
     return stereo_opt
@@ -582,7 +585,7 @@ def get_point2dem_opts(tr, tsrs,threads=n_cpu):
         target resolution of output DEM
     tsrs: str
         projection of output DEM
-    threads: int 
+    threads: int
         number of threads to use for each stereo job
 
     Returns
@@ -682,7 +685,7 @@ def dem_align(ref_dem, source_dem, max_displacement, outprefix, align, trans_onl
         grid = True
     else:
         grid = False
-    
+
     if grid == True:
         point2dem_opts = get_point2dem_opts(tr, tsrs,threads=threads)
         point2dem_args = [pc]
@@ -721,7 +724,7 @@ def get_cam2rpc_opts(t='pinhole', dem=None, gsd=None, num_samples=50):
     cam2rpc_opts = []
     cam2rpc_opts.extend(['--dem-file', dem])
     cam2rpc_opts.extend(['--save-tif-image'])
-    
+
     # these parameters are not required when providing a DEM
     # the lon-lat range and height-range is not required when sampling points from a DEM
     #dem_ds = iolib.fn_getds(dem)
@@ -869,7 +872,7 @@ def compute_cam_px_reproj_err_stats_alt(content_fn,idx):
         content = f.readlines()
     content = [x.strip() for x in content]
     try:
-        
+
         px,py = read_px_error(content,idx)
         stats = malib.get_stats_dict(np.sqrt(px**2+py**2),full=True)
     except ValueError:
@@ -885,8 +888,8 @@ def compute_cam_px_reproj_err_stats_alt(content_fn,idx):
         'p16': 0.0,
         'p84': 0.0,
         'spread': 0.0,
-        'mode': 0.0}   
-        pass 
+        'mode': 0.0}
+        pass
     return stats
 
 def camera_reprojection_error_stats_df(pixel_error_fn):
@@ -905,7 +908,7 @@ def camera_reprojection_error_stats_df(pixel_error_fn):
     with open(pixel_error_fn,'r') as f:
         content = f.readlines()
     content = [x.strip() for x in content]
-    
+
     # compute position of camera filename
     camera_indices = []
 
@@ -915,7 +918,7 @@ def camera_reprojection_error_stats_df(pixel_error_fn):
             camera_indices.append(idx)
     n_cam = len(camera_indices)
     print(f"Total number of cameras are {n_cam}")
-    
+
     # read indices (line numbers) of pixel points for each camera
     pts_indices = []
     for idx,cam_idx in enumerate(camera_indices):
@@ -923,18 +926,18 @@ def camera_reprojection_error_stats_df(pixel_error_fn):
             pts_indices.append(np.arange(cam_idx+1,camera_indices[idx+1]))
         else:
             pts_indices.append(np.arange(cam_idx+1,len(content)))
-    
+
     # compute statistics for all pixels in 1 camera, in parallel
     stats_list = p_map(compute_cam_px_reproj_err_stats,[content]*n_cam,pts_indices)
-    
+
     # compose dataframe based on the returned list of dictionaries
     stats_df = pd.DataFrame(stats_list)
-    
-    # assign input camera name 
+
+    # assign input camera name
     cam_names = np.array(content)[camera_indices]
     temp_cam = np.char.split(np.array(content)[camera_indices],', ')
     stats_df['camera'] = np.array([os.path.basename(x[0]) for x in temp_cam])
-    
+
     # dataframe is good to go
     return stats_df
 
@@ -943,7 +946,7 @@ def produce_m(lon,lat,m_meridian_offset=0):
     Produce M matrix which facilitates conversion from Lon-lat (NED) to ECEF coordinates
     From https://github.com/visionworkbench/visionworkbench/blob/master/src/vw/Cartography/Datum.cc#L249
     This is known as direction cosie matrix
-    
+
     Parameters
     ------------
     lon: numeric
@@ -961,14 +964,14 @@ def produce_m(lon,lat,m_meridian_offset=0):
         lat = -90
     if lat > 90:
         lat = 90
-    
+
     rlon = (lon + m_meridian_offset) * (np.pi/180)
     rlat = lat * (np.pi/180)
     slat = np.sin(rlat)
     clat = np.cos(rlat)
     slon = np.sin(rlon)
     clon = np.cos(rlon)
-    
+
     R = np.ones((3,3),dtype=float)
     R[0,0] = -slat*clon
     R[1,0] = -slat*slon
@@ -992,11 +995,11 @@ def convert_ecef2NED(asp_rotation,lon,lat):
         longitude for computing m matrix
     lat: numeric
         latitude for computing m matrix
-    
+
     Returns
     --------------
     r_ned: np.array
-        3 x 3 NED rotation matrix 
+        3 x 3 NED rotation matrix
     """
     m = produce_m(lon,lat)
     r_ned = np.matmul(np.linalg.inv(m),asp_rotation)
@@ -1008,47 +1011,47 @@ def ned_rotation_from_tsai(tsai_fn):
     """
     return yaw pitch and roll angles from a ASP tsai file
     This is experimental and only tested for one SkySat dataset, will remove this message when get consistent results for other datasets
-    
+
     Parameters
     ------------
     tsai_fn: str
         path to tsai file
-    
+
     Returns
     ------------
     yaw,pitch,roll: numeric
         yaw pitch and roll angle in degrees (order of rotation assumed: Yaw, Pitch, Roll)
     """
     from scipy.spatial.transform import Rotation as R
-  
+
     #coordinate conversion step
     from pyproj import Transformer
     ecef_proj = 'EPSG:4978'
     geo_proj = 'EPSG:4326'
     ecef2wgs = Transformer.from_crs(ecef_proj,geo_proj)
-    
+
     # read tsai files
     asp_dict = asp.read_tsai_dict(tsai_fn)
-    
+
     # get camera position
     cam_cen = asp_dict['cam_cen_ecef']
     lat,lon,h = ecef2wgs.transform(*cam_cen)
     #print(lat,lon)
     # get camera rotation angle
     rot_mat = np.reshape(asp_dict['rotation_matrix'],(3,3))
-    
+
     #rotate about z axis by 90 degrees
     #https://math.stackexchange.com/questions/651413/given-the-degrees-to-rotate-around-axis-how-do-you-come-up-with-rotation-matrix
     rot_z = np.zeros((3,3),float)
     angle = np.pi/2
-    rot_z[0,0] = np.cos(angle) 
+    rot_z[0,0] = np.cos(angle)
     rot_z[0,1] = -1 * np.sin(angle)
     rot_z[1,0] = np.sin(angle)
     rot_z[1,1] = np.cos(angle)
     rot_z[2,2] = 1
-    
-    
-    
+
+
+
     #return np.matmul(rot_z,convert_ecef2NED(rot_mat,lon,lat))
     return R.from_matrix(np.matmul(rot_z,np.linalg.inv(convert_ecef2NED(rot_mat,lon,lat)))).as_euler('ZYX',degrees=True)
 
@@ -1068,34 +1071,34 @@ def prepare_virtual_gcp(init_reproj_fn,cnet_fn,refdem,out_gcp,dem_crs='EPSG:3264
     out_gcp: str
         Path to output GCP file
     dem_crs: str
-        CRS for input DEM 
+        CRS for input DEM
         ## This should not be required, we should get rid of this
     dh_threshold: numeric
         absolute dh threshold between triangulated points and refrence DEM height to select as virtual GCP
     mask_glac: bool
         mask out points within a glacier (**Not implemented rn**)
-    
-        
+
+
     """
     print("Initiating logic to compute virtual GCP file")
-    
+
     print("Step 1: Reading inital reprojection error file......")
     init_gdf = _pointmap2gdf(init_reproj_fn,proj=dem_crs)
-    
+
     print("Step 2: Reading reference DEM........")
     dem_ds = iolib.fn_getds(refdem)
-    
+
     print("Step 3: Sampling heights from reference DEM and computing elevation residual")
     map_x = init_gdf.geometry.x.values
     map_y = init_gdf.geometry.y.values
     init_gdf['dem_height'] = _sample_ndimage(iolib.ds_getma(dem_ds),dem_ds.GetGeoTransform(),map_x,map_y)
     init_gdf['dh'] = np.abs(init_gdf['dem_height'] - init_gdf['height_above_datum'])
-    
+
     print(f"Step 4: Applying absolute input dh threshold of {np.round(dh_threshold,2)} m..............")
     mask = init_gdf['dh'] <= dh_threshold
     fltr_gdf = init_gdf[mask]
     print(f"From total of {len(init_gdf)} points, {len(fltr_gdf)} points fall within dh_threshold ")
-    
+
     print("Step 5: Preparing GCPs indices")
     filtered_idx = fltr_gdf.index.values
     mask_5_view = fltr_gdf[' num_observations'] >= 5
@@ -1109,12 +1112,12 @@ def prepare_virtual_gcp(init_reproj_fn,cnet_fn,refdem,out_gcp,dem_crs='EPSG:3264
 
     mask_2_view = fltr_gdf[' num_observations'] == 2
     two_view_idx = fltr_gdf[mask_2_view].index.values
-    
+
     print("Step 6: Reading control network")
     with open(cnet_fn,'r') as f:
         content = f.readlines()
     content = [x.strip() for x in content]
-    
+
     print("Step 7: Writing GCP to disk")
     #outfn = os.path.splitext(cnet_fn)[0]+'_opt3_gcp.gcp'
     counter = 1
@@ -1174,7 +1177,7 @@ def _pointmap2gdf(pointmap,proj='EPSG:32644',sort_ascending=False):
 
 def _mapToPixel(mX, mY, geoTransform):
     """Convert map coordinates to pixel coordinates based on geotransform
-    
+
     Accepts float or NumPy arrays
     GDAL model used here - upper left corner of upper left pixel for mX, mY (and in GeoTransform)
     """
@@ -1260,7 +1263,7 @@ def read_ip_record(mf):
     #### Reading ip and MP is borrowed from the solution which Amaury Dehecq shared on the ASP mailing list
     #### All credits to Amaury (amaury.dehecq at univ-grenoble-alpes.fr)
 
-    Information comtained are x, y, xi, yi, orientation, scale, interest, polarity, octave, scale_lvl, desc 
+    Information comtained are x, y, xi, yi, orientation, scale, interest, polarity, octave, scale_lvl, desc
     (Oleg/Scott to explain?)
     Input: - mf, file handle to the in put binary file (in 'rb' mode)
     Output: - iprec, array containing the IP record
@@ -1282,7 +1285,7 @@ def read_match_file(match_file):
     #### Reading ip and MP is borrowed from the solution which Amaury Dehecq shared on the ASP mailing list
     #### All credits to Amaury (amaury.dehecq at univ-grenoble-alpes.fr)
 
-    Input: 
+    Input:
     - match_file: str, path to the match file
     Outputs:
     - two arrays, containing the IP records for image1 and image2.
@@ -1301,7 +1304,7 @@ def read_match_file(match_file):
 
     # Close file
     mf.close()
-    
+
     return im1_ip, im2_ip
 
 
@@ -1310,7 +1313,7 @@ def virtual_gcp_ba(img_list,cam_list,overlap_list,session,ba_prefix,
                   prepare_matchfiles=False):
     # step 1: prepare matchfiles
     ## Assume for now exists in a directory
-    
+
     # step 2: run bundle adjust with zero iterations and only 1 pass
     ## this will produce the pointmap file and the cnet.csv file #init_reproj_fn,#cnet_fn
     cnet_ba_opt =  get_ba_opts(
@@ -1323,18 +1326,18 @@ def virtual_gcp_ba(img_list,cam_list,overlap_list,session,ba_prefix,
     except:
         print("No control network found, exiting")
         sys.exit()
-    
+
     try:
         init_reproj_fn = glob.glob(ba_prefix+'*initial*no_loss_*pointmap*.csv')[0]
     except:
         print("No initial error pointmap found,exiting")
         sys.exit()
-    
+
 
     # step 3: Run the function from above which will generate the gcp
-    
+
     prepare_virtual_gcp(init_reproj_fn,cnet_fn,refdem,out_gcp,dem_crs,dh_threshold,mask_glac)
-    
+
     # Finally run the bundle adjustment with the GCPs
     gcp_bundle_adjust_opt = get_ba_opts(
             ba_prefix, session=session,num_iterations=400,num_pass=1,overlap_list=overlap_list,camera_weight=0)
